@@ -159,7 +159,7 @@ function createEnemy() {
 
   var enemy = game.add.graphics(0, 0);
   enemy.beginFill(0xff0000);
-  enemy.drawRect(0, 0, 50, 50);
+  enemy.drawCircle(0, 0, 50);
   enemy.endFill();
 
   var playerRect = new Phaser.Rectangle(player.x - 150, player.y - 150, 300, 300);
@@ -554,7 +554,5 @@ function update() {
   checkPlayerEnemyCollision();
   checkPlayerSpellCollision();
 }
-
-
 
 </script>
