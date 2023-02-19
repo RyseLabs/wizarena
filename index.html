@@ -237,11 +237,11 @@ function createSpellFromEnemy(enemy) {
 
 function updatePlayerMovement() {
 	var maxMoveSpeed = 4; // the maximum movespeed
-  var minMoveSpeed = 2; // the minimum movespeed
+  var minMoveSpeed = 2.5; // the minimum movespeed
   var maxEnergy = 100; // the maximum energy
-  if(moveSpeed > minMoveSpeed) {
+  if(moveSpeed >= minMoveSpeed) {
   	moveSpeed = maxMoveSpeed - ((maxMoveSpeed - minMoveSpeed) * totalEnergy / maxEnergy);
-  }
+  } else { moveSpeed = 2; }
   
   if (game.input.keyboard.isDown(Phaser.Keyboard.A)) {
     if (map.x <= game.world.centerX - playerSize / 2)
