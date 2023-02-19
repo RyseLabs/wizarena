@@ -684,16 +684,9 @@ function resetGame() {
   totalEnergy = 0;
 	energyGroup.removeAll(true);
   energyCount = 0;
-    moveSpeed = 4;
 		playerSize = 50;
 		moveSpeed = 4;
 		totalEnergy = 0;
-		energyMaxCount = 30;
-		energyMinDistance = 50;
-		bulletSpeed = 800;
-		enemySpeed = 400;
-		innerSpellSize = 15;
-		outerSpellSize = 30;
     
   // Restart game
   game.state.restart();
@@ -776,5 +769,6 @@ function update() {
   checkPlayerEnemyCollision();
   checkPlayerSpellCollision();
 }
+
 
 </script>
