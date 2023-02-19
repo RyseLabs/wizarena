@@ -37,7 +37,6 @@ var spellTypes = {
   fire: 0xff0000, // red
   water: 0x00008b, // dark blue
   earth: 0x8b4513, // brown
-  air: 0x87cefa, // light blue
 };
 
 function preload() {}
@@ -424,7 +423,16 @@ function checkEnemyBulletCollision() {
     }
     
   });
-
+  game.physics.arcade.overlap(bulletsGroup, spellGroup, function(bullet, spell) {
+      if (bullet.type == 1) {
+        // Blasts don't destroy other blasts
+        if (spell.type == 1) {
+          return;
+        }
+      }
+      // Kill the bullet when it collides with a blast
+      bullet.kill();
+    });
 }
 
 function createTornado(bullet) {
@@ -471,31 +479,12 @@ function createEarthSpire(bullet) {
 
   spellGroup.add(blast);
 
-	enemiesGroup.forEachAlive(function(otherEnemy) {
-    if (game.physics.arcade.distanceBetween(blast, otherEnemy) <= blastRadius) {
-      otherEnemy.kill();
-      createSpellFromEnemy(otherEnemy);
+  // Kill the bullets that collide with the blast
+  bulletsGroup.forEachAlive(function(otherBullet) {
+    if (game.physics.arcade.overlap(blast, otherBullet)) {
+      otherBullet.kill();
     }
   });
-  
-  // Kill the bullet and the blast after a short delay
-  bullet.kill();
-  game.time.events.add(Phaser.Timer.SECOND * 3, function() {
-    blast.kill();
-  }, this);
-}
-
-
-function createWaterGeyser(bullet) {
-  var blastRadius = 250;
-    var spellType = spellTypes[playerAffinity];
-  // Create an AOE blast at the bullet's position
-  var blast = game.add.graphics(bullet.x, bullet.y);
-  blast.beginFill(spellType);
-  blast.drawCircle(0, 0, blastRadius);
-  blast.endFill();
-  blast.renderable = false; // don't show the blast for player and enemies
-  spellGroup.add(blast);
 
   // Kill the enemies that are within the blast radius
   enemiesGroup.forEachAlive(function(otherEnemy) {
@@ -507,7 +496,49 @@ function createWaterGeyser(bullet) {
 
   // Kill the bullet and the blast after a short delay
   bullet.kill();
-  game.time.events.add(Phaser.Timer.SECOND * 0.35, function() {
+  game.time.events.add(Phaser.Timer.SECOND * 3, function() {
+    blast.kill();
+  }, this);
+}
+
+
+
+
+function createWaterGeyser(bullet) {
+  var blastRadius = 750;
+  var spellType = spellTypes[playerAffinity];
+
+  // Create an AOE blast at the bullet's position
+  var blast = game.add.graphics(bullet.x, bullet.y);
+  blast.beginFill(spellType);
+  blast.drawCircle(0, 0, blastRadius);
+  blast.endFill();
+  blast.renderable = false;
+
+  // Add physics body to the blast graphic
+  game.physics.arcade.enable(blast);
+  blast.body.immovable = true;
+
+  spellGroup.add(blast);
+
+  // Kill the bullets that collide with the blast
+  bulletsGroup.forEachAlive(function(otherBullet) {
+    if (game.physics.arcade.overlap(blast, otherBullet)) {
+      otherBullet.kill();
+    }
+  });
+
+  // Kill the enemies that are within the blast radius
+  enemiesGroup.forEachAlive(function(otherEnemy) {
+    if (game.physics.arcade.distanceBetween(blast, otherEnemy) <= blastRadius) {
+      otherEnemy.kill();
+      createSpellFromEnemy(otherEnemy);
+    }
+  });
+
+  // Kill the bullet and the blast after a short delay
+  bullet.kill();
+  game.time.events.add(Phaser.Timer.SECOND * 2, function() {
     blast.kill();
   }, this);
 }
