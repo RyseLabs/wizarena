@@ -534,12 +534,7 @@ function create() {
 }
 
 function update() {
-  // Add CSS to make the game canvas full width
-  var gameCanvas = document.getElementsByTagName('canvas')[0];
-  if (gameCanvas) {
-    gameCanvas.style.width = '100%';
-    gameCanvas.style.height = '100%';
-  }
+
 
   var dx = map.x - map.previousPosition.x;
   var dy = map.y - map.previousPosition.y;
