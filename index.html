@@ -1,6 +1,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/2.6.2/phaser.min.js"></script>
 <script>
-var game = new Phaser.Game(800, 800, Phaser.AUTO, '', {
+var game = new Phaser.Game(1920, 1080, Phaser.AUTO, '', {
   preload: preload,
   create: create,
   update: update
@@ -487,7 +487,6 @@ function checkPlayerEnemyCollision() {
 
 function checkPlayerSpellCollision() {
   game.physics.arcade.overlap(player, spellGroup, function(player, spell) {
-    console.log('spell learned');
     playerAffinity = spell.spellName;
     // create the affinity circle on top of the player
     var affinity = game.add.graphics(0, 0);
@@ -534,8 +533,14 @@ function create() {
 }
 
 function update() {
-
-
+	if(game) {
+  	game.scale.scaleMode = Phaser.ScaleManager.SHOW_ALL;
+    game.scale.pageAlignHorizontally = true;
+		game.scale.pageAlignVertically = true;
+    game.scale.setMinMax(400, 300, 1920, 1080);
+	}
+  
+  
   var dx = map.x - map.previousPosition.x;
   var dy = map.y - map.previousPosition.y;
   updatePlayerMovement();
@@ -549,6 +554,7 @@ function update() {
   checkPlayerEnemyCollision();
   checkPlayerSpellCollision();
 }
+
 
 
 </script>
