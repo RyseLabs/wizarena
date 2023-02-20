@@ -1,12 +1,16 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/2.6.2/phaser.min.js"></script>
 <script>
+
 var game = new Phaser.Game(1920, 1080, Phaser.AUTO, '', {
   preload: preload,
   create: create,
   update: update
 });
 
-
+var devMode = true;
+var devAffinity = "water";
+var devMapSize = 2000;
+var devTotalEnergy = 1000;
 var map;
 var player;
 var score = 0;
@@ -14,6 +18,7 @@ var playerAffinity;
 var mapSize = 10000;
 var playerSize = 50;
 var moveSpeed = 4;
+var maxSpeed = 6;
 var energyGroup;
 var spellGroup;
 var totalEnergy = 0;
@@ -23,7 +28,7 @@ var energyMinDistance = 50;
 var bulletsGroup;
 var bulletSpeed = 800;
 var enemiesGroup;
-var enemySpeed = 400;
+var enemySpeed = 200;
 var innerSpellSize = 15;
 var outerSpellSize = 30;
 var canShootProjectile = true;
@@ -31,11 +36,13 @@ var canUseUltimate = true;
 var isUsingUltimate = false;
 var ultimateTimer = 1;
 var isGameOver = false;
+var blastGroup;
+var terrainGroup;
 
 // Define spell types and their colors
 var spellTypes = {
   fire: 0xff0000, // red
-  water: 0x00008b, // dark blue
+  water: 0x00CED1, // blue
   earth: 0x8b4513, // brown
 };
 
@@ -48,6 +55,8 @@ function buildMap() {
   map.endFill();
   map.x = game.world.centerX - mapSize / 2;
   map.y = game.world.centerY - mapSize / 2;
+  map.enableBody = true;
+  game.physics.arcade.enable(map);
 }
 
 function buildPlayer() {
@@ -57,19 +66,38 @@ function buildPlayer() {
   player.endFill();
   player.x = game.world.centerX;
   player.y = game.world.centerY;
+  player.enableBody = true;
+  player.physicsBodyType = Phaser.Physics.ARCADE;
   game.physics.arcade.enable(player);
+}
+
+function buildBlastGroup() {
+  blastGroup = game.add.group();
+  blastGroup.enableBody = true;
+  blastGroup.physicsBodyType = Phaser.Physics.ARCADE;
+  game.physics.arcade.enable(blastGroup);
+}
+
+function buildTerrainGroup() {
+  terrainGroup = game.add.group();
+  terrainGroup.enableBody = true;
+  terrainGroup.physicsBodyType = Phaser.Physics.ARCADE;
+  game.physics.arcade.enable(terrainGroup);
 }
 
 function buildEnergyGroup() {
   energyGroup = game.add.group();
   energyGroup.enableBody = true;
   energyGroup.physicsBodyType = Phaser.Physics.ARCADE;
+  game.physics.arcade.enable(energyGroup);
 }
 
 function buildBulletsGroup() {
   bulletsGroup = game.add.group();
   bulletsGroup.enableBody = true;
   bulletsGroup.physicsBodyType = Phaser.Physics.ARCADE;
+  bulletsGroup.z = 9999;
+  game.physics.arcade.enable(bulletsGroup);
 }
 
 function detectBulletFire() {
@@ -88,6 +116,9 @@ function detectBulletFire() {
       bullet.beginFill(0x9400D3);
       bullet.drawCircle(0, 0, 20);
       bullet.endFill();
+      bullet.z = 9999;
+      bullet.enableBody = true;
+   		bullet.physicsBodyType = Phaser.Physics.ARCADE;
       bulletsGroup.add(bullet);
 
       // Calculate the direction from the player to the cursor position
@@ -103,13 +134,13 @@ function detectBulletFire() {
       if (!playerAffinity) return;
 
       rightMouseButton = game.time.events.add(Phaser.Timer.SECOND * 0, function() {
-      	if(!canShootProjectile) return;
-        
+        if (!canShootProjectile) return;
+
         if (totalEnergy < 5) return;
         totalEnergy -= 5;
         updateTotalEnergy();
-				canShootProjectile = false;
-				
+        canShootProjectile = false;
+
         var affinity = game.add.graphics(0, 0);
         var spellType = spellTypes[playerAffinity];
 
@@ -120,6 +151,9 @@ function detectBulletFire() {
         bullet.endFill();
         bullet.affinity = playerAffinity;
         bullet.type = 1; //blast
+        bullet.z = 9999;
+        bullet.enableBody = true;
+        bullet.physicsBodyType = Phaser.Physics.ARCADE;
         bulletsGroup.add(bullet);
 
         // Calculate the direction from the player to the cursor position
@@ -131,8 +165,10 @@ function detectBulletFire() {
 
         // Store the bullet's original angle
         bullet.originalAngle = angle;
-        
-				setTimeout(()=>{canShootProjectile = true;}, 1000);
+
+        setTimeout(() => {
+          canShootProjectile = true;
+        }, 1000);
       });
     }
   }, this);
@@ -186,7 +222,7 @@ function createEnemy() {
 
   enemy.x = x;
   enemy.y = y;
-
+  enemy.physicsBodyType = Phaser.Physics.ARCADE;
   game.physics.arcade.enable(enemy);
 
   // Set enemy velocity to move randomly
@@ -222,12 +258,11 @@ function createEnergy() {
 }
 
 function createSpellFromEnemy(enemy) {
-	score += 1;
+  score += 1;
   updateScore();
   var x = enemy.x;
   var y = enemy.y;
 
-  // Select a random spell type
   // Select a random spell type
   var spellName = Object.keys(spellTypes)[Math.floor(Math.random() * Object.keys(spellTypes).length)];
   var spellType = spellTypes[spellName];
@@ -246,17 +281,39 @@ function updatePlayerMovement() {
   var minMoveSpeed = 2.5; // the minimum movespeed
   var maxEnergy = 100; // the maximum energy
   var totalEnergyForCalc = totalEnergy;
-  
-  if(isUsingUltimate) {
-  	maxMoveSpeed = 6;
-    if(totalEnergy >= 100)
-    	totalEnergyForCalc = 50;
+
+  if (isUsingUltimate) {
+    maxMoveSpeed = 6;
+    if (totalEnergy >= 100)
+      totalEnergyForCalc = 50;
   }
-  
+
+
+  // Check for collisions with terrain
+  var terrain = getClosestTerrain(player, terrainGroup);
+  if (terrain) {
+    if (game.physics.arcade.collide(player, terrain)) {
+      // Get the direction from the player to the terrain
+      var direction = Phaser.Point.subtract(terrain.position, player.position);
+      direction.normalize();
+
+      // Move the map in the opposite direction of the terrain until it no longer collides
+      var factor = 1.5;
+      var mapVelocity = new Phaser.Point(map.body.velocity.x, map.body.velocity.y);
+      var oppositeDirection = direction.clone().multiply(-factor, -factor);
+      map.x -= oppositeDirection.x;
+      map.y -= oppositeDirection.y;
+
+      return;
+    }
+  }
+
   var moveSpeed = maxMoveSpeed - ((maxMoveSpeed - minMoveSpeed) * totalEnergyForCalc / maxEnergy);
-  
+
   // Clamp moveSpeed between minMoveSpeed and maxMoveSpeed
   moveSpeed = Phaser.Math.clamp(moveSpeed, minMoveSpeed, maxMoveSpeed);
+
+  if (devMode) moveSpeed = maxSpeed;
 
   if (game.input.keyboard.isDown(Phaser.Keyboard.A)) {
     if (map.x <= game.world.centerX - playerSize / 2)
@@ -273,31 +330,35 @@ function updatePlayerMovement() {
     if (map.y + mapSize >= game.world.centerY + playerSize / 2)
       map.y -= moveSpeed;
   }
+
 }
 
 
+function getClosestTerrain(player, terrain) {
+  var closestTerrain = null;
+  var closestDistance = Number.MAX_VALUE;
+  var playerPos = new Phaser.Point(player.x, player.y);
 
-function updateEnergyMovement(dx, dy) {
-  // Calculate the change in background position
-
-  // Move the energy sprites with the background
-  energyGroup.children.forEach(function(energy) {
-    energy.body.x += dx;
-    energy.body.y += dy;
+  terrainGroup.forEach(function(terrain) {
+    var distance = playerPos.distance(new Phaser.Point(terrain.x, terrain.y));
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestTerrain = terrain;
+    }
   });
 
-  // Update the previous position of the background
-  map.previousPosition.x = map.x;
-  map.previousPosition.y = map.y;
+  return closestTerrain;
 }
 
-function updateSpellMovement(dx, dy) {
+
+
+function updateMovement(dx, dy, group) {
   // Calculate the change in background position
 
   // Move the energy sprites with the background
-  spellGroup.children.forEach(function(spell) {
-    spell.body.x += dx;
-    spell.body.y += dy;
+  group.children.forEach(function(obj) {
+    obj.body.x += dx;
+    obj.body.y += dy;
   });
 
   // Update the previous position of the background
@@ -369,9 +430,10 @@ function updateBulletMovement(dx, dy) {
   if (bulletsGroup != null && bulletsGroup.length > 0) {
     bulletsGroup.children.forEach(function(bullet) {
       if (!bullet.alive) return;
-
+			
       bullet.body.x += dx;
       bullet.body.y += dy;
+      bullet.z = 9999;
       // Check if the bullet is out of the map
       if (bullet.body.x < map.x || bullet.body.x > map.x + mapSize ||
         bullet.body.y < map.y || bullet.body.y > map.y + mapSize) {
@@ -383,9 +445,9 @@ function updateBulletMovement(dx, dy) {
 
 function checkEnemyBulletCollision() {
   game.physics.arcade.overlap(bulletsGroup, enemiesGroup, function(bullet, enemy) {
-  	
+
     if (bullet.type == 1) {
-    	
+
       switch (bullet.affinity) {
         case "fire":
           createFireBall(bullet);
@@ -400,44 +462,44 @@ function checkEnemyBulletCollision() {
           createTornado(bullet);
           break;
       }
-      
-      
+
+
     } else {
       // Kill the bullet and the enemy when they collide
 
       bullet.kill();
       enemy.health -= 1;
-      
-      switch(enemy.health){
+
+      switch (enemy.health) {
         case 1:
-            enemy.beginFill(0xff00000);
-            enemy.drawCircle(0, 0, 50);
-            enemy.endFill();
+          enemy.beginFill(0xff00000);
+          enemy.drawCircle(0, 0, 50);
+          enemy.endFill();
           break;
       }
-      
-      if(enemy.health <= 0) {
-      	enemy.kill();
-      	createSpellFromEnemy(enemy);
+
+      if (enemy.health <= 0) {
+        enemy.kill();
+        createSpellFromEnemy(enemy);
       }
     }
-    
+
   });
   game.physics.arcade.overlap(bulletsGroup, spellGroup, function(bullet, spell) {
-      if (bullet.type == 1) {
-        // Blasts don't destroy other blasts
-        if (spell.type == 1) {
-          return;
-        }
+    if (bullet.type == 1) {
+      // Blasts don't destroy other blasts
+      if (spell.type == 1) {
+        return;
       }
-      // Kill the bullet when it collides with a blast
-      bullet.kill();
-    });
+    }
+    // Kill the bullet when it collides with a blast
+    bullet.kill();
+  });
 }
 
 function createTornado(bullet) {
   var blastRadius = 250;
-  
+
   var spellType = spellTypes[playerAffinity];
   // Create an AOE blast at the bullet's position
   var blast = game.add.graphics(bullet.x, bullet.y);
@@ -445,7 +507,7 @@ function createTornado(bullet) {
   blast.drawCircle(0, 0, blastRadius);
   blast.endFill();
   blast.renderable = false; // don't show the blast for player and enemies
-  spellGroup.add(blast);
+  blastGroup.add(blast);
 
   // Kill the enemies that are within the blast radius
   enemiesGroup.forEachAlive(function(otherEnemy) {
@@ -463,41 +525,35 @@ function createTornado(bullet) {
 }
 
 function createEarthSpire(bullet) {
-  var blastRadius = 250;
+  var terrainSize = 350;
   var spellType = spellTypes[playerAffinity];
 
-  // Create an AOE blast at the bullet's position
-  var blast = game.add.graphics(bullet.x, bullet.y);
-  blast.beginFill(spellType);
-  blast.drawCircle(0, 0, blastRadius);
-  blast.endFill();
-  blast.renderable = false;
+  terrain = game.add.graphics(0, 0);
+  terrain.beginFill(spellType);
+  terrain.drawCircle(0, 0, terrainSize);
+  terrain.endFill();
+  terrain.x = bullet.x;
+  terrain.y = bullet.y;
+  terrain.anchor.set(0.5, 0.5);
 
-  // Add physics body to the blast graphic
-  game.physics.arcade.enable(blast);
-  blast.body.immovable = true;
-
-  spellGroup.add(blast);
+  terrain.enableBody = true;
+  terrain.physicsBodyType = Phaser.Physics.ARCADE;
+  terrain.width = terrainSize;
+  terrain.height = terrainSize;
+  terrainGroup.add(terrain);
+  game.physics.arcade.enable(terrain);
 
   // Kill the bullets that collide with the blast
   bulletsGroup.forEachAlive(function(otherBullet) {
-    if (game.physics.arcade.overlap(blast, otherBullet)) {
+    if (game.physics.arcade.overlap(terrain, otherBullet)) {
       otherBullet.kill();
-    }
-  });
-
-  // Kill the enemies that are within the blast radius
-  enemiesGroup.forEachAlive(function(otherEnemy) {
-    if (game.physics.arcade.distanceBetween(blast, otherEnemy) <= blastRadius) {
-      otherEnemy.kill();
-      createSpellFromEnemy(otherEnemy);
     }
   });
 
   // Kill the bullet and the blast after a short delay
   bullet.kill();
-  game.time.events.add(Phaser.Timer.SECOND * 3, function() {
-    blast.kill();
+  game.time.events.add(Phaser.Timer.SECOND * 5, function() {
+    terrain.kill();
   }, this);
 }
 
@@ -505,21 +561,32 @@ function createEarthSpire(bullet) {
 
 
 function createWaterGeyser(bullet) {
-  var blastRadius = 750;
+  var blastRadius = 600;
   var spellType = spellTypes[playerAffinity];
 
   // Create an AOE blast at the bullet's position
-  var blast = game.add.graphics(bullet.x, bullet.y);
+  var blast = game.add.graphics(0, 0);
   blast.beginFill(spellType);
   blast.drawCircle(0, 0, blastRadius);
   blast.endFill();
   blast.renderable = false;
+  blast.type = "water";
+  blast.z = 1;
 
+  blast.x = bullet.x;
+  blast.y = bullet.y;
+  blast.anchor.set(0.5, 0.5);
+
+  blast.enableBody = true;
+  blast.physicsBodyType = Phaser.Physics.ARCADE;
+  blast.width = blastRadius;
+  blast.height = blastRadius;
+  blast.radius = blastRadius;
   // Add physics body to the blast graphic
   game.physics.arcade.enable(blast);
   blast.body.immovable = true;
 
-  spellGroup.add(blast);
+  blastGroup.add(blast);
 
   // Kill the bullets that collide with the blast
   bulletsGroup.forEachAlive(function(otherBullet) {
@@ -528,31 +595,23 @@ function createWaterGeyser(bullet) {
     }
   });
 
-  // Kill the enemies that are within the blast radius
-  enemiesGroup.forEachAlive(function(otherEnemy) {
-    if (game.physics.arcade.distanceBetween(blast, otherEnemy) <= blastRadius) {
-      otherEnemy.kill();
-      createSpellFromEnemy(otherEnemy);
-    }
-  });
-
   // Kill the bullet and the blast after a short delay
   bullet.kill();
-  game.time.events.add(Phaser.Timer.SECOND * 2, function() {
+  game.time.events.add(Phaser.Timer.SECOND * 5, function() {
     blast.kill();
   }, this);
 }
 
 function createFireBall(bullet) {
   var blastRadius = 250;
-    var spellType = spellTypes[playerAffinity];
+  var spellType = spellTypes[playerAffinity];
   // Create an AOE blast at the bullet's position
   var blast = game.add.graphics(bullet.x, bullet.y);
   blast.beginFill(spellType);
   blast.drawCircle(0, 0, blastRadius);
   blast.endFill();
   blast.renderable = false; // don't show the blast for player and enemies
-  spellGroup.add(blast);
+  blastGroup.add(blast);
 
   // Kill the enemies that are within the blast radius
   enemiesGroup.forEachAlive(function(otherEnemy) {
@@ -569,12 +628,52 @@ function createFireBall(bullet) {
   }, this);
 }
 
+function setEnemySpeed(enemy, newSpeed) {
+  // Calculate the current velocity of the enemy
+  var currentVelocity = new Phaser.Point(enemy.body.velocity.x, enemy.body.velocity.y);
+  
+  // Calculate the magnitude of the current velocity
+  var currentMagnitude = currentVelocity.getMagnitude();
+  
+  // Normalize the current velocity
+  currentVelocity.normalize();
+  
+  // Scale the current velocity by the new speed
+  currentVelocity.multiply(newSpeed, newSpeed);
+  
+  // Update the enemy's velocity
+  enemy.body.velocity.x = currentVelocity.x;
+  enemy.body.velocity.y = currentVelocity.y;
+}
+
+
 function updateEnemyMovement(dx, dy) {
+	
   // Move the enemies with the background
   if (enemiesGroup != null && enemiesGroup.length > 0) {
     enemiesGroup.children.forEach(function(enemy) {
+    	setEnemySpeed(enemy, enemySpeed);
+      // Set enemy velocity to move randomly
       enemy.body.x += dx;
       enemy.body.y += dy;
+      
+              // Check for collisions with terrain
+      var terrain = getClosestTerrain(enemy, terrainGroup);
+      if (terrain) {
+        if (game.physics.arcade.overlap(enemy, terrain)) {
+          // Get the direction from the terrain to the enemy
+          var direction = Phaser.Point.subtract(enemy.position, terrain.position);
+          direction.normalize();
+
+          // Move the enemy in the opposite direction of the terrain until it no longer overlaps
+          var factor = 1.5;
+          var enemyVelocity = new Phaser.Point(enemy.body.velocity.x, enemy.body.velocity.y);
+          var oppositeDirection = direction.clone().multiply(factor, factor);
+          enemy.body.velocity = oppositeDirection;
+
+          return;
+        }
+      }
 
       // Check if the enemy is out of the map
       if (enemy.body.x < map.x) {
@@ -593,7 +692,6 @@ function updateEnemyMovement(dx, dy) {
         enemy.body.y = map.y + mapSize - enemy.height;
         enemy.body.velocity.y *= -1;
       }
-
       // Check if the enemy collides with the map edges
       if (enemy.body.blocked.left || enemy.body.blocked.right) {
         enemy.body.velocity.x *= -1;
@@ -601,8 +699,29 @@ function updateEnemyMovement(dx, dy) {
       if (enemy.body.blocked.up || enemy.body.blocked.down) {
         enemy.body.velocity.y *= -1;
       }
+      
     });
   }
+}
+
+function checkCollision() {
+  checkEnergyCollisions();
+  checkEnemyBulletCollision();
+  checkPlayerEnemyCollision();
+  checkPlayerSpellCollision();
+
+  // water pool slows all units
+  enemiesGroup.forEachAlive(function(otherEnemy) {
+    blastGroup.forEachAlive(function(blast) {
+      if (game.physics.arcade.distanceBetween(blast, otherEnemy) <= blast.radius/2) 			{
+        setEnemySpeed(otherEnemy, enemySpeed/2);
+      }
+  	});
+  });
+
+  game.physics.arcade.overlap(bulletsGroup, terrainGroup, function(bullet, terrain) {
+    bullet.kill();
+  });
 }
 
 function checkPlayerEnemyCollision() {
@@ -634,7 +753,7 @@ function shootCircleOfEnergy() {
   var blastAngleIncrement = Math.PI * 2 / blastCount;
 
   for (var i = 0; i < blastCount; i++) {
-  	totalEnergy -= 1;
+    totalEnergy -= 1;
     var blastAngle = blastAngleIncrement * i;
     var blastX = player.x + Math.cos(blastAngle) * blastRadius;
     var blastY = player.y + Math.sin(blastAngle) * blastRadius;
@@ -644,19 +763,19 @@ function shootCircleOfEnergy() {
     blast.drawCircle(0, 0, 15);
     blast.endFill();
     energyGroup.add(blast);
-   
+
   }
 }
 
 function updateScore() {
-	scoreTotalText.text = "Score: " + score;
+  scoreTotalText.text = "Score: " + score;
 }
 
 /////////////////////////////////////////
 
 function gameOver() {
-	if(isGameOver) return;
-	isGameOver = true;
+  if (isGameOver) return;
+  isGameOver = true;
   // Show a modal with "Game Over" and a "Play Again" button
   var modal = game.add.graphics(0, 0);
   modal.beginFill(0x000000, 0.5);
@@ -683,18 +802,16 @@ function gameOver() {
   modalGroup.add(modal);
   modalGroup.add(gameOverText);
   modalGroup.add(playAgainText);
-  
-   	
 
   // Add a click listener to the modal to remove it and resume the game
   modal.inputEnabled = true;
   modal.events.onInputDown.add(function() {
-   resetGame();
+    resetGame();
   }, this);
 }
 
 function resetGame() {
-	isGameOver = false;
+  isGameOver = false;
   // Kill all enemies
   enemiesGroup.forEach(function(enemy) {
     enemy.kill();
@@ -713,26 +830,31 @@ function resetGame() {
   player.reset(game.world.centerX, game.world.centerY);
   playerEnergy = 100;
   totalEnergy = 0;
-	energyGroup.removeAll(true);
+  energyGroup.removeAll(true);
   energyCount = 0;
-		playerSize = 50;
-		moveSpeed = 4;
-		totalEnergy = 0;
-    
+  playerSize = 50;
+  moveSpeed = 4;
+  totalEnergy = 0;
+
   // Restart game
   game.state.restart();
 }
 
 function create() {
   game.stage.backgroundColor = '#000000';
-
+  if (devMode) {
+    totalEnergy = devTotalEnergy;
+    playerAffinity = devAffinity;
+    mapSize = devMapSize;
+  }
   buildMap();
-  buildPlayer();
   buildEnergyGroup();
   buildBulletsGroup();
+  buildBlastGroup();
+  buildTerrainGroup();
   createEnemies();
   createSpells();
-  
+  buildPlayer();
   scoreTotalText = game.add.text(20, 20, 'Score: ' + score, {
     font: '24px Arial',
     fill: '#9400D3'
@@ -757,48 +879,50 @@ function create() {
   window.addEventListener('contextmenu', function(event) {
     event.preventDefault();
   });
+
 }
 
 function update() {
-	if(isGameOver) return;
-  
-	if(game) {
-  	game.scale.scaleMode = Phaser.ScaleManager.SHOW_ALL;
-    game.scale.pageAlignHorizontally = true;
-		game.scale.pageAlignVertically = true;
-    game.scale.setMinMax(400, 300, 1920, 1080);
-	}
-  
-   if (game.input.keyboard.isDown(Phaser.Keyboard.SHIFT)) {
-   		if(canUseUltimate && totalEnergy >= 10) {
-        canUseUltimate = false;
-        isUsingUltimate = true;
-        // Increase moveSpeed for 1 second
-        moveSpeed = 6;
-        game.time.events.add(Phaser.Timer.SECOND * ultimateTimer, function() {
-          moveSpeed = 4; // Reset moveSpeed after 1 second
-          isUsingUltimate = false;
-        }, this);
+  if (isGameOver) return;
 
-        // Shoot 10 energy blasts in a circle from the player
-        shootCircleOfEnergy();
-        setTimeout(()=>{canUseUltimate = true;}, 500)
+  if (game) {
+    game.scale.scaleMode = Phaser.ScaleManager.SHOW_ALL;
+    game.scale.pageAlignHorizontally = true;
+    game.scale.pageAlignVertically = true;
+    game.scale.setMinMax(400, 300, 1920, 1080);
+  }
+
+  if (game.input.keyboard.isDown(Phaser.Keyboard.SHIFT)) {
+    if (canUseUltimate && totalEnergy >= 10) {
+      canUseUltimate = false;
+      isUsingUltimate = true;
+      // Increase moveSpeed for 1 second
+      moveSpeed = 6;
+      game.time.events.add(Phaser.Timer.SECOND * ultimateTimer, function() {
+        moveSpeed = 4; // Reset moveSpeed after 1 second
+        isUsingUltimate = false;
+      }, this);
+
+      // Shoot 10 energy blasts in a circle from the player
+      shootCircleOfEnergy();
+      setTimeout(() => {
+        canUseUltimate = true;
+      }, 500)
     }
   }
-  
+
   var dx = map.x - map.previousPosition.x;
   var dy = map.y - map.previousPosition.y;
 
-  updatePlayerMovement();
-  updateEnergyMovement(dx, dy);
-  checkEnergyCollisions();
   createNewEnergy();
-  updateBulletMovement(dx, dy);
-  checkEnemyBulletCollision();
+  updatePlayerMovement();
   updateEnemyMovement(dx, dy);
-  updateSpellMovement(dx, dy);
-  checkPlayerEnemyCollision();
-  checkPlayerSpellCollision();
+  updateMovement(dx, dy, energyGroup);
+  updateMovement(dx, dy, blastGroup);
+  updateMovement(dx, dy, spellGroup);
+  updateBulletMovement(dx, dy);
+  updateMovement(dx, dy, terrainGroup);
+  checkCollision();
 }
 
 
